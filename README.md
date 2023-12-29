@@ -1,13 +1,6 @@
 
 <!-- <img src="roaring-bitmap-icon.jpeg" align="center"> -->
-<div align="center">
-<img src="roaring-bitmap-icon.jpeg" hgith="50" width="50">
-<b>
-<span style="font-weight:700;font-size:20px">
-  Roaring Bitmap 内幕
-</span>
-</b>
-</div>
+# <center> <img src="roaring-bitmap-icon.jpeg" hgith="30" width="30">  Roaring Bitmap 内幕 </center>
 
 ## 目录
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
@@ -27,7 +20,6 @@
 - [参考文档](#%E5%8F%82%E8%80%83%E6%96%87%E6%A1%A3)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
-<br/>
 
 ## 前言
 
