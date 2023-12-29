@@ -1,6 +1,8 @@
 
 <!-- <img src="roaring-bitmap-icon.jpeg" align="center"> -->
-# <center> <img src="roaring-bitmap-icon.jpeg" hgith="30" width="30">  Roaring Bitmap 内幕 </center>
+<h1 align="center">  
+  <img src="roaring-bitmap-icon.jpeg" hgith="30" width="30">  Roaring Bitmap 内幕  
+</h1>
 
 ## 目录
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
@@ -42,17 +44,50 @@ Roaring Bitmap 最基本的设计思路是将一个 32 位无符号整型拆分�
 
 ## Value 容器
 
-Value 容器用于存储 32 位无符号整型的低 16 位，每个 Value 容器共享相同的高 16 位 Key，使用不超过 8kB (大 B，表示 byte) 的内存，存储 [key x 2^16, (key + 1) x 2^16) 之间的元素。
-
-相同高 16 位 key 的 value 将存储到同一个 value 容器，每个 value 容器最多存储 2 的 16 次方个元素，共享相同的高 16 位 key，使用 value 容器存储，而 key 则使用 16 bit 的无符号整型的有序数组存储。
-
-Roaring Bitmap 支持三种 value 容器，每个容器使用的内存不超过 8 kB (大B，表示 byte)，能够全部放入一级缓存(i7-6700 的 L1 数据缓存为 128 kB)。其中数组容器是元素低 16 位组成的有序数组，最多存储 4096 个元素。当需要存储的元素数量超过 4096 的时候，数组容器将会转换成 bitmap 容器。此外数组容器和 bitmap 容器都可以转换成 run 容器，它使用 run length 编码来减少内存的使用。
+Value 容器用于存储 32 位无符号整型的低 16 位，每个 Value 容器共享相同的高 16 位 Key，使用不超过 8kB (大 B，表示 byte) 的内存（可以放入一级缓存），存储 [key x 2^16, (key + 1) x 2^16) 之间的元素。Value 容器底层使用数组存储，对于数组和 Run 这两个变长容器，在插入元素的时候按需动态扩容数组，并记录内存分配容量和容器内元素的数量。
 
 ### 数组容器
 
+数组容器使用有序数组存储元素的低 16 位，最多存储 4096 个元素。当插入 4097 个元素的时候，会创建新的 bitmap 容器替代当前的数组容器，反之亦然。数组容器结构体的代码如下：
+
+```c
+STRUCT_CONTAINER(array_container_s) {
+    int32_t cardinality; // 数组容器中元素的数量
+    int32_t capacity; // 数组容器中元素的容量, 容量不够插入新元素，会进行扩容，直到达到 4096 的上限
+    uint16_t *array; // 用于存储元素低16位的数组
+};
+```
+
+数组容器的初始容量为 0，在写入元素的时候，按照需要的容量乘以扩容系数动态扩容。如果容量一下子扩得太大，并且写入的元素较少，就会浪费内存；如果容量扩得太小，增加的元素较多，则扩容过于频繁，影响写入速度。为了在这两者取得平衡，数组容器会基于当前容量的大小动态调整扩容系数，具体代码如下：
+
+```c
+static inline int32_t grow_capacity(int32_t capacity) {
+    // 初始的容量为 0，延迟内存分配到增加元素的时候
+    return (capacity <= 0) ? ARRAY_DEFAULT_INIT_SIZE 
+                           // 需要的容量小于 64, 直接扩容为需要容量的两倍
+                           : capacity < 64 ? capacity * 2 
+                                           // 需要的容量小于 1024，直接扩容为当前的二分之三。
+                                           : capacity < 1024 ? capacity * 3 / 2
+                                           // 需要的容量大于 1024，扩容为当前容量的四分之五。
+                                                             : capacity * 5 / 4;
+}
+```
+
 ### Bitmap 容器
 
+Bitmap 容器固定使用1024 个 64 位机器字组成的数组来实现未压缩的 bitmap，并且可以表达 [key x 2^16, (key + 1) x 2^16) 区间的所有元素。Bitmap
+容器结构体代码如下：
+
+```c
+STRUCT_CONTAINER(bitset_container_s) {
+    int32_t cardinality; // Bitmap 容器中元素的数量
+    uint64_t *words; // 使用 1024 个 64 位机器字表达 bitmap
+};
+```
+
 ### Run 容器
+
+Run 容器是使用 Run Length 编码存储元素的容器。
 
 ### 容器的互相转换
 
