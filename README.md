@@ -1,5 +1,36 @@
 
-# 1. 前言
+<!-- <img src="roaring-bitmap-icon.jpeg" align="center"> -->
+<div style="display:flex">
+<div style="width:35%">
+<img src="roaring-bitmap-icon.jpeg" align="right" hgith="50" width="50">
+</div>
+<div style="width:50%;padding-left:2%">
+<font size="6">Roaring Bitmap 内幕</font>
+</div>
+</div>
+
+<font size="6">目录</font>
+---
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+<!-- **Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)* -->
+
+- [前言](#%E5%89%8D%E8%A8%80)
+- [总体设计](#%E6%80%BB%E4%BD%93%E8%AE%BE%E8%AE%A1)
+- [Value 容器](#value-%E5%AE%B9%E5%99%A8)
+  - [数组容器](#%E6%95%B0%E7%BB%84%E5%AE%B9%E5%99%A8)
+  - [Bitmap 容器](#bitmap-%E5%AE%B9%E5%99%A8)
+  - [Run 容器](#run-%E5%AE%B9%E5%99%A8)
+  - [容器的互相转换](#%E5%AE%B9%E5%99%A8%E7%9A%84%E4%BA%92%E7%9B%B8%E8%BD%AC%E6%8D%A2)
+- [向量执行基础](#%E5%90%91%E9%87%8F%E6%89%A7%E8%A1%8C%E5%9F%BA%E7%A1%80)
+- [访问操作](#%E8%AE%BF%E9%97%AE%E6%93%8D%E4%BD%9C)
+- [逻辑计算](#%E9%80%BB%E8%BE%91%E8%AE%A1%E7%AE%97)
+- [参考文档](#%E5%8F%82%E8%80%83%E6%96%87%E6%A1%A3)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+<br/>
+
+# 前言
 
 Roaring Bitmap 是一个高性能的压缩 Bitmap 实现，与传统的基于 RLE (Run Length 编码) 的 Bitmap 实现 (WAH、Concise、EWAH) 相比，在计算性能和压缩效率上都有成倍的提升，并被广泛应用于许多生产平台，有很大的学习研究价值。
 
@@ -7,33 +38,40 @@ Roaring Bitmap 是一个高性能的压缩 Bitmap 实现，与传统的基于 RL
 
 Bitmap 是一种使用 N 个 bit 表示在给定 [0, N) 区间，如果存在第 i 个元素，则第 i 个 bit 位为 1 的数据结构。例如当 N = 10 的时候，在给定 [0, 10) 的区间，存在 1, 3, 5, 6, 7, 8, 9 七个元素，那么对应的 Bitmap 为: 0101011111。相比于使用有序数组 [1, 3, 5, 6, 7, 8, 9]，Bitmap 使用一个 bit 位就能表示 32 位整数是否存在，这将有效节省内存并且大大提高运算效率。然而当 bitmap 中存在的元素比较稀疏，特别是当其数量 S < N/32 的时候，未经压缩的 bitmap 将不再有此优势。
 
-# 2. 总体设计
+# 总体设计
+
 ![overall_architecture](overall_architecture.png "总体设计")
 
-暂时无法在飞书文档外展示此内容
-Roaring Bitmap 最基本的设计思路是将一个 32 位无符号整型拆分成高 16 位和低 16 位的 key、value 对，相同高 16 位 key 的 value 将存储到同一个 value 容器，每个 value 容器最多存储 2 的 16 次方个元素，共享相同的高 16 位 key，使用 value 容器存储，而 key 则使用 16 bit 的无符号整型的有序数组存储。
+<!-- TODO 补充设计上下文 -->
+
+Roaring Bitmap 最基本的设计思路是将一个 32 位无符号整型拆分成高 16 位和低 16 位的 key、value 对，其中高 16 位 key 存储在一个有序数组中，每个 key 指向存储该 key 低 16 位的 value 容器。Roaring Bitmap 支持数组、Bitmap、Run 三种不同的 Value 容器，以保证无论数据稀疏还是稠密，它都能获得最好的性能。
+
+<!-- TODO 优化语句的流畅度 -->
+作为 Bitmap 的一种实现，Roaring bitmap 需要支持访问操作和逻辑运算。访问操作用来定位指定的元素，执行增加、删除操作；而逻辑运算则通常作用于整个 bitmap，比如求交集，并集，差集等。由于 Roaring Bitmap 支持三种不同的 Value 容器，不同的 Value 容器之间进行逻辑运算需要使用不同的算法，这无疑增加了设计的复杂度。
+
+# Value 容器
+
+Value 容器用于存储 32 位无符号整型的低 16 位，每个 Value 容器共享相同的高 16 位 Key，使用不超过 8kB (大 B，表示 byte) 的内存，存储 [key x 2^16, (key + 1) x 2^16) 之间的元素。
+
+相同高 16 位 key 的 value 将存储到同一个 value 容器，每个 value 容器最多存储 2 的 16 次方个元素，共享相同的高 16 位 key，使用 value 容器存储，而 key 则使用 16 bit 的无符号整型的有序数组存储。
 
 Roaring Bitmap 支持三种 value 容器，每个容器使用的内存不超过 8 kB (大B，表示 byte)，能够全部放入一级缓存(i7-6700 的 L1 数据缓存为 128 kB)。其中数组容器是元素低 16 位组成的有序数组，最多存储 4096 个元素。当需要存储的元素数量超过 4096 的时候，数组容器将会转换成 bitmap 容器。此外数组容器和 bitmap 容器都可以转换成 run 容器，它使用 run length 编码来减少内存的使用。
 
-Bitmap 需要支持访问操作和逻辑运算。访问操作作用于单个元素，比如增加或者删除一个元素；逻辑运算则通常作用于整个 bitmap，比如求交集，并集，差集等。由于 Roaring Bitmap 支持三种不同的 Value 容器，不同的 Value 容器之间进行逻辑运算需要使用不同的算法，这无疑增加了设计的复杂度。
+## 数组容器
 
-# 3. Value 容器
+## Bitmap 容器
 
-## 3.1 数组容器
+## Run 容器
 
-## 3.2 Bitmap 容器
+## 容器的互相转换
 
-## 3.3 Run 容器
+# 向量执行基础
 
-## 3.4 容器的互相转换
+# 访问操作
 
-# 4. 向量执行基础
+# 逻辑计算
 
-# 5. 访问操作
-
-# 6. 逻辑计算
-
-``` 
+```
 input: an integer w 
 output: an array S containing the indexes where a 1-bit can be found in w 
 Let S be an initially empty list 
@@ -128,4 +166,4 @@ int32_t intersect(uint16_t *A, size_t lengthA ,
 }
 ```
 
-# 7. 参考文档
+# 参考文档
