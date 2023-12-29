@@ -1,16 +1,15 @@
 
 <!-- <img src="roaring-bitmap-icon.jpeg" align="center"> -->
-<div style="display:flex">
-<div style="width:35%">
-<img src="roaring-bitmap-icon.jpeg" align="right" hgith="50" width="50">
-</div>
-<div style="width:50%;padding-left:2%">
-<font size="6">Roaring Bitmap 内幕</font>
-</div>
+<div align="center">
+<img src="roaring-bitmap-icon.jpeg" hgith="50" width="50">
+<b>
+<span style="font-weight:700;font-size:20px">
+  Roaring Bitmap 内幕
+</span>
+</b>
 </div>
 
-<font size="6">目录</font>
----
+## 目录
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
 <!-- **Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)* -->
@@ -30,7 +29,7 @@
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 <br/>
 
-# 前言
+## 前言
 
 Roaring Bitmap 是一个高性能的压缩 Bitmap 实现，与传统的基于 RLE (Run Length 编码) 的 Bitmap 实现 (WAH、Concise、EWAH) 相比，在计算性能和压缩效率上都有成倍的提升，并被广泛应用于许多生产平台，有很大的学习研究价值。
 
@@ -38,7 +37,7 @@ Roaring Bitmap 是一个高性能的压缩 Bitmap 实现，与传统的基于 RL
 
 Bitmap 是一种使用 N 个 bit 表示在给定 [0, N) 区间，如果存在第 i 个元素，则第 i 个 bit 位为 1 的数据结构。例如当 N = 10 的时候，在给定 [0, 10) 的区间，存在 1, 3, 5, 6, 7, 8, 9 七个元素，那么对应的 Bitmap 为: 0101011111。相比于使用有序数组 [1, 3, 5, 6, 7, 8, 9]，Bitmap 使用一个 bit 位就能表示 32 位整数是否存在，这将有效节省内存并且大大提高运算效率。然而当 bitmap 中存在的元素比较稀疏，特别是当其数量 S < N/32 的时候，未经压缩的 bitmap 将不再有此优势。
 
-# 总体设计
+## 总体设计
 
 ![overall_architecture](overall_architecture.png "总体设计")
 
@@ -49,7 +48,7 @@ Roaring Bitmap 最基本的设计思路是将一个 32 位无符号整型拆分�
 <!-- TODO 优化语句的流畅度 -->
 作为 Bitmap 的一种实现，Roaring bitmap 需要支持访问操作和逻辑运算。访问操作用来定位指定的元素，执行增加、删除操作；而逻辑运算则通常作用于整个 bitmap，比如求交集，并集，差集等。由于 Roaring Bitmap 支持三种不同的 Value 容器，不同的 Value 容器之间进行逻辑运算需要使用不同的算法，这无疑增加了设计的复杂度。
 
-# Value 容器
+## Value 容器
 
 Value 容器用于存储 32 位无符号整型的低 16 位，每个 Value 容器共享相同的高 16 位 Key，使用不超过 8kB (大 B，表示 byte) 的内存，存储 [key x 2^16, (key + 1) x 2^16) 之间的元素。
 
@@ -57,19 +56,19 @@ Value 容器用于存储 32 位无符号整型的低 16 位，每个 Value 容�
 
 Roaring Bitmap 支持三种 value 容器，每个容器使用的内存不超过 8 kB (大B，表示 byte)，能够全部放入一级缓存(i7-6700 的 L1 数据缓存为 128 kB)。其中数组容器是元素低 16 位组成的有序数组，最多存储 4096 个元素。当需要存储的元素数量超过 4096 的时候，数组容器将会转换成 bitmap 容器。此外数组容器和 bitmap 容器都可以转换成 run 容器，它使用 run length 编码来减少内存的使用。
 
-## 数组容器
+### 数组容器
 
-## Bitmap 容器
+### Bitmap 容器
 
-## Run 容器
+### Run 容器
 
-## 容器的互相转换
+### 容器的互相转换
 
-# 向量执行基础
+## 向量执行基础
 
-# 访问操作
+## 访问操作
 
-# 逻辑计算
+## 逻辑计算
 
 ```
 input: an integer w 
@@ -166,4 +165,4 @@ int32_t intersect(uint16_t *A, size_t lengthA ,
 }
 ```
 
-# 参考文档
+## 参考文档
