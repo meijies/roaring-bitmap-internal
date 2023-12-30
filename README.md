@@ -1,7 +1,7 @@
 
 <!-- <img src="roaring-bitmap-icon.jpeg" align="center"> -->
 <h1 align="center">  
-  <img src="roaring-bitmap-icon.jpeg" hgith="30" width="30">  Roaring Bitmap 内幕  
+  <img src="roaring-bitmap-icon.jpeg" hgith="30" width="30"></img>  Roaring Bitmap 内幕  
 </h1>
 
 ## 目录
@@ -16,7 +16,7 @@
   - [Bitmap 容器](#bitmap-%E5%AE%B9%E5%99%A8)
   - [Run 容器](#run-%E5%AE%B9%E5%99%A8)
   - [容器的互相转换](#%E5%AE%B9%E5%99%A8%E7%9A%84%E4%BA%92%E7%9B%B8%E8%BD%AC%E6%8D%A2)
-- [向量执行基础](#%E5%90%91%E9%87%8F%E6%89%A7%E8%A1%8C%E5%9F%BA%E7%A1%80)
+- [SIMD 基础](#simd-%E5%9F%BA%E7%A1%80)
 - [访问操作](#%E8%AE%BF%E9%97%AE%E6%93%8D%E4%BD%9C)
 - [逻辑计算](#%E9%80%BB%E8%BE%91%E8%AE%A1%E7%AE%97)
 - [参考文档](#%E5%8F%82%E8%80%83%E6%96%87%E6%A1%A3)
@@ -75,8 +75,7 @@ static inline int32_t grow_capacity(int32_t capacity) {
 
 ### Bitmap 容器
 
-Bitmap 容器固定使用1024 个 64 位机器字组成的数组来实现未压缩的 bitmap，并且可以表达 [key x 2^16, (key + 1) x 2^16) 区间的所有元素。Bitmap
-容器结构体代码如下：
+Bitmap 容器固定使用1024 个 64 位机器字组成的数组来实现未压缩的 bitmap，并且可以表达 [key x 2^16, (key + 1) x 2^16) 区间的所有元素。Bitmap 容器存储的元素个数总是大于 4096，如果容器执行删除操作，使得元素的个数小于 4096，那么将创建新的数组容器替代当前的 Bitmap 容器。具体的 Bitmap 容器结构体代码如下：
 
 ```c
 STRUCT_CONTAINER(bitset_container_s) {
@@ -87,17 +86,51 @@ STRUCT_CONTAINER(bitset_container_s) {
 
 ### Run 容器
 
-Run 容器是使用 Run Length 编码存储元素的容器。
+Run 容器是使用 Run Length 编码存储元素的容器，而 Run Length 是使用 (value, run length) 对，表达连续元素的编码，例如 11,12,13,14,15 可以使用 (11, 4) 表达。（11, 4) 中的第一个数字 11 表示起始值，第二个数字 4 表示紧接着 11 之后的 4 个连续的值。Run 容器的结构体代码如下：
+
+```c
+struct rle16_s {
+    uint16_t value; // 起始值
+    uint16_t length; // run length, 紧接着 value 之后的元素个数
+};
+
+typedef struct rle16_s rle16_t;
+
+STRUCT_CONTAINER(run_container_s) {
+    int32_t n_runs; // 存储的 (value, run length) 对的个数 
+    int32_t capacity; // 分配的内存容量
+    rle16_t *runs; // (value, run length) 数组
+};
+
+```
+<!-- TODO 描述 convert 的逻辑，见 convert.c 文件中的 convert_run_optimizer 方法 -->
 
 ### 容器的互相转换
 
-## 向量执行基础
+## SIMD 基础
+
+### SIMD 简介
+
+SIMD(Single Instruction Multiple Data)即单指令流多数据流，简单来说就是使用一条指令在一个时钟周期内对多条数据执行相同的计算。大多数现代 CPU 设计都包含 SIMD 指令，Intel 1996 年就推出了 X86 MMX指令扩展，1999 年推出了全面覆盖 MMX 的 SSE 指令集，随后又相继推出了 SSE2、SSE3、SSE4、AVX2、AVX512 等扩展指令集。SSE 增加了 16 个新的 128 位寄存器(XMM0 - XMM15)，AVX2 又增加了 16 个 256位寄存器 (YMM0 - YMM15)，最后 AVX512 指令集在 XMM 和 YMM 寄存器的基础上，通过引入 ZMM 寄存器将位宽扩展到 512 位，并且将寄存器的数量增加到 32 个，其中 YMM 寄存器作为 ZMM 的低 156 位，而 XMM 又作为 YMM 的低 128 位，具体如下图所示：
+
+<center>
+<img src="avx-512-register.png" hight="350" width="350"></img>
+</center>
+<br/>
+
+以 64 位整数相加为例，一条标量指令只能同时计算一对整数相加，而 SSE 指令可以同时计算 2 对整数相加，AVX2 指令能够同时计算 4 对整数相加，AVX512 指令更是能够同时计算 8 对整数的相加，具体如下图所示：
+
+<img src="simd_calc.png">
+
+### SIMD 使用
+
+
 
 ## 访问操作
 
 ## 逻辑计算
 
-```
+```c
 input: an integer w 
 output: an array S containing the indexes where a 1-bit can be found in w 
 Let S be an initially empty list 
@@ -193,3 +226,11 @@ int32_t intersect(uint16_t *A, size_t lengthA ,
 ```
 
 ## 参考文档
+
+- [Roaring Bitmaps: Implementation of an Optimized Software Library](http://arxiv.org/abs/1709.07821)
+- [Consistently faster and smaller compressed bitmaps with Roaring](http://arxiv.org/abs/1603.06549)
+- [Better bitmap performance with Roaring bitmaps](http://arxiv.org/abs/1402.6407)
+- [SIMD- and cache-friendly algorithm for sorting an array of structures](https://www.vldb.org/pvldb/vol8/p1274-inoue.pdf)
+- [Fast Sorted-Set Intersection using SIMD Instructions](https://adms-conf.org/p1-SCHLEGEL.pdf)
+- [Intel Intrinsics Guide](https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html)
+- 《代码之美》
