@@ -113,17 +113,44 @@ STRUCT_CONTAINER(run_container_s) {
 
 SIMD(Single Instruction Multiple Data)即单指令流多数据流，简单来说就是使用一条指令在一个时钟周期内对多条数据执行相同的计算。大多数现代 CPU 设计都包含 SIMD 指令，Intel 1996 年就推出了 X86 MMX指令扩展，1999 年推出了全面覆盖 MMX 的 SSE 指令集，随后又相继推出了 SSE2、SSE3、SSE4、AVX2、AVX512 等扩展指令集。SSE 增加了 16 个新的 128 位寄存器(XMM0 - XMM15)，AVX2 又增加了 16 个 256位寄存器 (YMM0 - YMM15)，最后 AVX512 指令集在 XMM 和 YMM 寄存器的基础上，通过引入 ZMM 寄存器将位宽扩展到 512 位，并且将寄存器的数量增加到 32 个，其中 YMM 寄存器作为 ZMM 的低 156 位，而 XMM 又作为 YMM 的低 128 位，具体如下图所示：
 
-<center>
+<div align="center">
 <img src="avx-512-register.png" hight="350" width="350"></img>
-</center>
-<br/>
+</div>
 
 以 64 位整数相加为例，一条标量指令只能同时计算一对整数相加，而 SSE 指令可以同时计算 2 对整数相加，AVX2 指令能够同时计算 4 对整数相加，AVX512 指令更是能够同时计算 8 对整数的相加，具体如下图所示：
+<div align="center">
+<img src="simd_calc.png" width="600">
+</div>
 
-<img src="simd_calc.png">
+在实际使用过程中，想要真正发挥 SIMD 的性能优势，需要遵循两个原则：
+
+1. 数据使用连续内存布局 (发挥数据预取的优势，并且 load 无法从不连续的内存加载数据)
+2. 数据内存对齐 ([C/C++内存对齐详解](https://zhuanlan.zhihu.com/p/30007037), [内存地址按照cacheline对齐的作用](https://zhuanlan.zhihu.com/p/579182410))
+3. 设计没有条件分支的算法 (分支预测错误惩罚可能耗费很多时钟周期)。
+
 
 ### SIMD 使用
 
+由于编译器的 Auto Vectorization 只能将没有数据依赖的简单循环优化成使用 SIMD 指令的向量实现，因此在大部分情况下，需要手写调用 SIMD intrinsics（SIMD 内建函数）的代码来实现最大数据并行。下面给出了使用 4 条 AVX2 指令实现 8 对浮点型相加的函数 `vector_add_eight_float` 示例以及它的等价标量函数 `add_eight_float` ：
+
+```c
+#include <immintrin.h>
+
+void vector_add_eight_float(float *p1, float *p2, float *result) {
+  __m256 a = _mm256_loadu_ps(p1); // 从 p1 的内存地址加载 256 bit 数据(8 个单精度浮点数)
+  __m256 b = _mm256_loadu_ps(p2); // 从 p2 的内存地址加载 256 bit 数据(8 个单精度浮点数)
+  __m256 c = _mm256_add_ps(a, b); // p1 和 p2 的 8 个单精度浮点数逐对相加，保存到结果 c
+  _mm256_store_ps(result, c); // 将结果 c 存储到 result 内存地址
+}
+
+void add_eight_float(float *p1, float *p2, float *result) {
+  for (int i = 0; i < 8; i++) {
+    result[i] = p1[i] + p2[i];
+  }
+}
+```
+
+SIMD intrinsics 函数的基本格式位 `__mm<数据位宽>_<函数名>_<数据类型>`，以 `__mm256_add_ps` 为例，数据位宽为 256bit，函数名为 add，数据类型为 ps 表示单精度浮点数。更多 SIMD intrinsics 可以查看 [intel intrinsics guide](https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html) 。
 
 
 ## 访问操作
